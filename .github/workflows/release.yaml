@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags: 
+      - 'v*'
+
+jobs:
+  create_release:
+    name: Create release
+    runs-on: ubuntu-latest
+    # Note this. We are going to use that in further jobs.
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+    - name: Create release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+
+  create_haxe_asset:
+
+    runs-on: ubuntu-latest
+
+    env:
+      HAXE_VERSION: latest
+      NODE_VERSION: 16
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+
+    - name: Install lix, haxe ${{ env.HAXE_VERSION }} and dependencies
+      run: |
+            npm i -g lix
+            lix install haxe ${{ env.HAXE_VERSION }}
+            lix download
+
+    - name: Compile project
+      run: haxe deploy.hxml
+
+    - uses: actions/upload-artifact@v3
+      with:
+        name: index.js
+        path: index.js
+
+  create_assets:
+    name: Release assets
+    needs: create_release # we need to know the upload URL
+
+    strategy:
+      matrix:
+        os: ['ubuntu-latest', 'windows-latest', 'macos-latest']
+        
+        include:
+        - os: ubuntu-latest
+          short_os: linux
+          binary_name: rsmp
+
+        - os: windows-latest
+          short_os: win
+          binary_name: rsmp.exe
+
+        - os: macos-latest
+          short_os: macos
+          binary_name: rsmp
+
+    env:
+      APP_NAME: media
+      RUST_APP_NAME: rsmp
+    
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      # if linux or windows
+      - name: Install latest rust toolchain for linux or windows
+        if: matrix.os == 'ubuntu-latest' || matrix.os == 'windows-latest'
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          default: true
+          override: true
+      # else
+      - name: Install latest rust toolchain for macos
+        if: matrix.os == 'macos-latest'
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-apple-darwin
+          default: true
+          override: true
+      # end if
+
+      # if linux
+      - name: Install libasound2-dev
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      # end if
+
+      - name: Build
+        run: |
+          cd rust_src
+          cargo build --release
+          cd ..
+
+      # if linux or macos
+      - name: Strip binary
+        if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest'
+        run: strip rust_src/target/release/${{ env.RUST_APP_NAME }}
+      # end if
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: index.js
+
+      - name: Package to release
+        run: |
+          mkdir -p tmp/${{ env.APP_NAME }}/lib
+          mv index.js tmp/${{ env.APP_NAME }}
+          mv readme.md tmp/${{ env.APP_NAME }}
+          mv rust_src/target/release/${{ matrix.binary_name }} tmp/${{ env.APP_NAME }}/lib
+
+      - uses: papeloto/action-zip@v1
+        with:
+          files: tmp/
+          dest: ${{ env.APP_NAME }}-${{ matrix.short_os }}.zip
+
+      - name: Upload release assets
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_release.outputs.upload_url }}
+          asset_name: ${{ env.APP_NAME }}-${{ matrix.short_os }}.zip
+          asset_path: ${{ env.APP_NAME }}-${{ matrix.short_os }}.zip
+          asset_content_type: application/octet-stream
