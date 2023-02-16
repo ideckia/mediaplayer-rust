@@ -131,6 +131,7 @@ jobs:
           mkdir -p tmp/${{ env.APP_NAME }}/lib
           mv index.js tmp/${{ env.APP_NAME }}
           mv readme.md tmp/${{ env.APP_NAME }}
+          echo '{"repository": "http://github.com/${{ github.repository }}","filename": "${{ env.APP_NAME }}-${{ matrix.short_os }}.zip","version": "${{ github.ref_name }}"}' > tmp/${{ env.APP_NAME }}/.info
           mv rust_src/target/release/${{ matrix.binary_name }} tmp/${{ env.APP_NAME }}/lib
 
       - uses: papeloto/action-zip@v1
