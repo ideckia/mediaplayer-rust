@@ -17,7 +17,7 @@ fn main() {
 
     match opt_sound_path {
         None => {
-            println!("rsmp {}", VERSION);
+            show_usage();
         }
         Some(sound_path) => {
             // Load a sound from a file
@@ -80,6 +80,15 @@ fn main() {
             }
         }
     }
+}
+
+fn show_usage() {
+    println!("rsmp {}", VERSION);
+    println!("Usage: rsmp <options>");
+    println!("");
+    println!("Options:");
+    println!("    -p, --path <path>        path of the sound to play (accepts ogg, mp3, wav...)");
+    println!("    -l, --loop               if set, sound will play in a loop");
 }
 
 fn handle_user_input(tx: Sender<Playback>) {
